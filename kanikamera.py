@@ -22,6 +22,8 @@ def get_config():
         with suppress(KeyError):
             ret["resolution"] = tuple(
                 int(x.strip()) for x in kanikamera["Resolution"].split("x"))
+        with suppress(KeyError):
+            ret["interval"] = float(kanikamera["Interval"])
     return ret
 
 
@@ -38,9 +40,10 @@ def capture_and_upload(token, resolution=(2592,1944)):
 
 def main():
     config = get_config()
+    interval = config.pop("interval", 300)
     while True:
         capture_and_upload(**config)
-        time.sleep(300)
+        time.sleep(interval)
 
 
 if __name__ == '__main__':
