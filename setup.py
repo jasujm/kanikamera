@@ -9,6 +9,6 @@ setup(
         ]
     },
     install_requires=[
-        "dropbox>=7.1", "picamera>=1.12"
+        "dropbox>=7.1", "picamera>=1.12", "xdg>=1.0"
     ]
 )
