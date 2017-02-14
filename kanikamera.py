@@ -20,8 +20,10 @@ def capture_and_upload(token):
     imgfile = BytesIO()
     with PiCamera(sensor_mode=3, resolution=(2592,1944)) as camera:
         camera.capture(imgfile, format="jpeg", resize=(800,600))
-    upload_file = "/Kanikuvat/{}.jpg".format(datetime.now().strftime("%Y%m%d-%H%M%S"))
-    dropbox=Dropbox(token)
+    now = datetime.now()
+    upload_file = "/Kanikuvat/{}/{}.jpg".format(
+        now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
+    dropbox = Dropbox(token)
     dropbox.files_upload(imgfile.getvalue(), upload_file)
 
 
