@@ -16,10 +16,10 @@ def get_config():
     return config
 
 
-def capture_and_upload(token):
+def capture_and_upload(token, resolution):
     imgfile = BytesIO()
-    with PiCamera(sensor_mode=3, resolution=(2592,1944)) as camera:
-        camera.capture(imgfile, format="jpeg", resize=(800,600))
+    with PiCamera(resolution=resolution) as camera:
+        camera.capture(imgfile, format="jpeg")
     now = datetime.now()
     upload_file = "/Kanikuvat/{}/{}.jpg".format(
         now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
@@ -30,8 +30,10 @@ def capture_and_upload(token):
 def main():
     config = get_config()
     token = config["Dropbox"]["Token"]
+    resolution = config.get("Kanikamera", "Resolution", fallback="2592x1944")
+    resolution = tuple(int(x.strip()) for x in resolution.split("x"))
     while True:
-        capture_and_upload(token)
+        capture_and_upload(token, resolution)
         time.sleep(300)
 
 
