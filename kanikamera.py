@@ -1,3 +1,4 @@
+from contextlib import suppress
 from datetime import datetime
 from io import BytesIO
 import os
@@ -10,13 +11,21 @@ from picamera import PiCamera
 def get_config():
     import configparser
     import xdg
+
     config = configparser.ConfigParser()
     paths = [xdg.XDG_CONFIG_HOME] + xdg.XDG_CONFIG_DIRS
     config.read(os.path.join(path, "kanikamera") for path in reversed(paths))
-    return config
+
+    ret = { "token": config["Dropbox"]["Token"] }
+    if "Kanikamera" in config:
+        kanikamera = config["Kanikamera"]
+        with suppress(KeyError):
+            ret["resolution"] = tuple(
+                int(x.strip()) for x in kanikamera["Resolution"].split("x"))
+    return ret
 
 
-def capture_and_upload(token, resolution):
+def capture_and_upload(token, resolution=(2592,1944)):
     imgfile = BytesIO()
     with PiCamera(resolution=resolution) as camera:
         camera.capture(imgfile, format="jpeg")
@@ -29,11 +38,8 @@ def capture_and_upload(token, resolution):
 
 def main():
     config = get_config()
-    token = config["Dropbox"]["Token"]
-    resolution = config.get("Kanikamera", "Resolution", fallback="2592x1944")
-    resolution = tuple(int(x.strip()) for x in resolution.split("x"))
     while True:
-        capture_and_upload(token, resolution)
+        capture_and_upload(**config)
         time.sleep(300)
 
 
