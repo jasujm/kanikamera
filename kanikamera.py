@@ -42,8 +42,9 @@ def main():
     config = get_config()
     interval = config.pop("interval", 300)
     while True:
+        tic = time.monotonic()
         capture_and_upload(**config)
-        time.sleep(interval)
+        time.sleep(max(interval + tic - time.monotonic(), 0))
 
 
 if __name__ == '__main__':
