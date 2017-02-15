@@ -1,4 +1,4 @@
-import configparser
+from configparser import ConfigParser
 from contextlib import suppress
 from datetime import datetime
 from io import BytesIO
@@ -13,7 +13,7 @@ import xdg
 
 
 def get_config():
-    config = configparser.ConfigParser()
+    config = ConfigParser()
     paths = [xdg.XDG_CONFIG_HOME] + xdg.XDG_CONFIG_DIRS
     config.read(os.path.join(path, "kanikamera") for path in reversed(paths))
 
