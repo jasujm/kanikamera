@@ -1,3 +1,4 @@
+import configparser
 from contextlib import suppress
 from datetime import datetime
 from io import BytesIO
@@ -8,12 +9,10 @@ import time
 from dropbox import Dropbox
 from dropbox.exceptions import DropboxException
 from picamera import PiCamera, PiCameraError
+import xdg
 
 
 def get_config():
-    import configparser
-    import xdg
-
     config = configparser.ConfigParser()
     paths = [xdg.XDG_CONFIG_HOME] + xdg.XDG_CONFIG_DIRS
     config.read(os.path.join(path, "kanikamera") for path in reversed(paths))
