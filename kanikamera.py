@@ -10,7 +10,13 @@ import time
 from dropbox import Dropbox
 from dropbox.exceptions import DropboxException
 from picamera import PiCamera, PiCameraError
+import systemd.journal
 import xdg
+
+
+def init_logging():
+    sys.argv[0] = os.path.basename(sys.argv[0])
+    logging.root.addHandler(systemd.journal.JournalHandler())
 
 
 def get_config():
@@ -51,6 +57,7 @@ def capture_and_upload(token, resolution=(2592,1944)):
 
 
 def main():
+    init_logging()
     config = get_config()
     interval = config.pop("interval", 300)
     while True:
