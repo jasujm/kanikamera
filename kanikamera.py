@@ -20,8 +20,7 @@ def get_config():
     if "Kanikamera" in config:
         kanikamera = config["Kanikamera"]
         with suppress(KeyError):
-            ret["resolution"] = tuple(
-                int(x.strip()) for x in kanikamera["Resolution"].split("x"))
+            ret["resolution"] = kanikamera["Resolution"]
         with suppress(KeyError):
             ret["interval"] = float(kanikamera["Interval"])
     return ret
