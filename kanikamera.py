@@ -1,11 +1,13 @@
 from contextlib import suppress
 from datetime import datetime
 from io import BytesIO
+import logging
 import os
 import time
 
 from dropbox import Dropbox
-from picamera import PiCamera
+from dropbox.exceptions import DropboxException
+from picamera import PiCamera, PiCameraError
 
 
 def get_config():
@@ -28,13 +30,19 @@ def get_config():
 
 def capture_and_upload(token, resolution=(2592,1944)):
     imgfile = BytesIO()
-    with PiCamera(resolution=resolution) as camera:
-        camera.capture(imgfile, format="jpeg")
+    try:
+        with PiCamera(resolution=resolution) as camera:
+            camera.capture(imgfile, format="jpeg")
+    except PiCameraError as e:
+        logging.warn("PiCamera error: %r", e)
     now = datetime.now()
     upload_file = "/Kanikuvat/{}/{}.jpg".format(
         now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
-    dropbox = Dropbox(token)
-    dropbox.files_upload(imgfile.getvalue(), upload_file)
+    try:
+        dropbox = Dropbox(token)
+        dropbox.files_upload(imgfile.getvalue(), upload_file)
+    except DropboxException as e:
+        logging.warn("Dropbox error: %r", e)
 
 
 def main():
