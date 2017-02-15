@@ -4,6 +4,7 @@ from datetime import datetime
 from io import BytesIO
 import logging
 import os
+import sys
 import time
 
 from dropbox import Dropbox
@@ -17,7 +18,12 @@ def get_config():
     paths = [xdg.XDG_CONFIG_HOME] + xdg.XDG_CONFIG_DIRS
     config.read(os.path.join(path, "kanikamera") for path in reversed(paths))
 
-    ret = { "token": config["Dropbox"]["Token"] }
+    try:
+        ret = { "token": config["Dropbox"]["Token"] }
+    except KeyError:
+        logging.fatal("Dropbox authentication token not found. Exiting.")
+        sys.exit(1)
+
     if "Kanikamera" in config:
         kanikamera = config["Kanikamera"]
         with suppress(KeyError):
