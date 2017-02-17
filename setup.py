@@ -2,7 +2,9 @@ from setuptools import setup
 
 setup(
     name="Kanikamera",
-    py_modules="kanikamera",
+    py_modules=[
+        "kanikamera",
+    ],
     entry_points={
         "console_scripts" : [
             "kanikamera = kanikamera:main"
