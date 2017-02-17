@@ -7,7 +7,7 @@ setup(
     ],
     entry_points={
         "console_scripts" : [
-            "kanikamera = kanikamera:main"
+            "kanikamera=kanikamera:main"
         ]
     },
     install_requires=[
