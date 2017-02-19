@@ -39,10 +39,10 @@ def get_config():
     return ret
 
 
-def capture_and_upload(token, resolution=(2592,1944)):
+def capture_and_upload(token, camera_config):
     imgfile = BytesIO()
     try:
-        with PiCamera(resolution=resolution) as camera:
+        with PiCamera(**camera_config) as camera:
             camera.capture(imgfile, format="jpeg")
     except PiCameraError as e:
         logging.warn("PiCamera error: %r", e)
@@ -59,10 +59,11 @@ def capture_and_upload(token, resolution=(2592,1944)):
 def main():
     init_logging()
     config = get_config()
+    token = config.pop("token")
     interval = config.pop("interval", 300)
     while True:
         tic = time.monotonic()
-        capture_and_upload(**config)
+        capture_and_upload(token, config)
         time.sleep(max(interval + tic - time.monotonic(), 0))
 
 
