@@ -2,12 +2,12 @@ from setuptools import setup
 
 setup(
     name="Kanikamera",
-    py_modules=[
+    packages=[
         "kanikamera",
     ],
     entry_points={
         "console_scripts" : [
-            "kanikamera=kanikamera:main"
+            "kanikamera=kanikamera.__main__:main"
         ]
     },
     install_requires=[
