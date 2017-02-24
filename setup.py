@@ -7,10 +7,13 @@ setup(
     ],
     entry_points={
         "console_scripts" : [
-            "kanikamera=kanikamera.__main__:main"
-        ]
+            "kanikamera=kanikamera.__main__:main",
+        ],
     },
     install_requires=[
-        "dropbox>=7.1", "picamera>=1.12", "xdg>=1.0", "systemd-python"
-    ]
+        "dropbox>=7.1",
+        "picamera>=1.12",
+        "xdg>=1.0",
+        "systemd-python",
+    ],
 )
