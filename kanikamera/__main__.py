@@ -26,6 +26,12 @@ def get_config():
     return config
 
 
+def init_config_dict(config, key):
+    if key in config:
+        return config[key]
+    return {}
+
+
 def capture_and_upload(watcher, revents):
     token, camera_config = watcher.data
     imgfile = BytesIO()
@@ -53,8 +59,8 @@ def main():
     except KeyError:
         logging.fatal("Dropbox authentication token not found. Exiting.")
         sys.exit(1)
-    camera_config = config["Camera"] if "Camera" in config else {}
-    timer_config = config["Timer"] if "Timer" in config else {}
+    camera_config = init_config_dict(config, "Camera")
+    timer_config = init_config_dict(config, "Timer")
     interval = float(timer_config.pop("interval", 300))
 
     loop = pyev.default_loop()
