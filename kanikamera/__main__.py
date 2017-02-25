@@ -5,11 +5,11 @@ from io import BytesIO
 import logging
 import os
 import sys
-import time
 
 from dropbox import Dropbox
 from dropbox.exceptions import DropboxException
 from picamera import PiCamera, PiCameraError
+import pyev
 import systemd.journal
 import xdg
 
@@ -39,7 +39,8 @@ def get_config():
     return ret
 
 
-def capture_and_upload(token, camera_config):
+def capture_and_upload(watcher, revents):
+    token, camera_config = watcher.data
     imgfile = BytesIO()
     try:
         with PiCamera(**camera_config) as camera:
@@ -61,10 +62,11 @@ def main():
     config = get_config()
     token = config.pop("token")
     interval = config.pop("interval", 300)
-    while True:
-        tic = time.monotonic()
-        capture_and_upload(token, config)
-        time.sleep(max(interval + tic - time.monotonic(), 0))
+
+    loop = pyev.default_loop()
+    timer = loop.timer(0, interval, capture_and_upload, (token, config))
+    timer.start()
+    loop.start()
 
 
 if __name__ == '__main__':
