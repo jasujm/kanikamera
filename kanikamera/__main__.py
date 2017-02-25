@@ -14,6 +14,8 @@ import pyev
 import systemd.journal
 import xdg
 
+from kanikamera.motionsensor import MotionSensor
+
 
 def init_logging():
     sys.argv[0] = os.path.basename(sys.argv[0])
@@ -67,14 +69,16 @@ def main():
     camera_config = init_config_dict(config, "Camera")
     timer_config = init_config_dict(config, "Timer")
     interval = float(timer_config.pop("interval", 300))
+    motion_sensor_config = init_config_dict(config, "MotionSensor")
 
     loop = pyev.default_loop()
     timer = loop.timer(0, interval, capture_and_upload, (token, camera_config))
     timer.start()
     sig = loop.signal(signal.SIGTERM, terminate)
     sig.start()
-    loop.start()
 
+    with MotionSensor(motion_sensor_config):
+        loop.start()
 
 if __name__ == '__main__':
     main()
