@@ -53,6 +53,10 @@ def capture_and_upload(watcher, revents):
         logging.warn("Dropbox error: %r", e)
 
 
+def motion_detected(watcher, revents):
+    logging.debug("Motion %r", watcher.data)
+
+
 def terminate(watcher, revents):
     watcher.loop.stop()
 
@@ -76,8 +80,10 @@ def main():
     timer.start()
     sig = loop.signal(signal.SIGTERM, terminate)
     sig.start()
+    motion = loop.async(motion_detected)
+    motion.start()
 
-    with MotionSensor(motion_sensor_config):
+    with MotionSensor(motion_sensor_config, motion):
         loop.start()
 
 if __name__ == '__main__':
