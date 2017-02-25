@@ -23,20 +23,7 @@ def get_config():
     config = ConfigParser()
     paths = [xdg.XDG_CONFIG_HOME] + xdg.XDG_CONFIG_DIRS
     config.read(os.path.join(path, "kanikamera") for path in reversed(paths))
-
-    try:
-        ret = { "token": config["Dropbox"]["Token"] }
-    except KeyError:
-        logging.fatal("Dropbox authentication token not found. Exiting.")
-        sys.exit(1)
-
-    if "Kanikamera" in config:
-        kanikamera = config["Kanikamera"]
-        with suppress(KeyError):
-            ret["resolution"] = kanikamera["Resolution"]
-        with suppress(KeyError):
-            ret["interval"] = float(kanikamera["Interval"])
-    return ret
+    return config
 
 
 def capture_and_upload(watcher, revents):
@@ -59,12 +46,19 @@ def capture_and_upload(watcher, revents):
 
 def main():
     init_logging()
+
     config = get_config()
-    token = config.pop("token")
-    interval = config.pop("interval", 300)
+    try:
+        token = config["Dropbox"]["token"]
+    except KeyError:
+        logging.fatal("Dropbox authentication token not found. Exiting.")
+        sys.exit(1)
+    camera_config = config["Camera"] if "Camera" in config else {}
+    timer_config = config["Timer"] if "Timer" in config else {}
+    interval = float(timer_config.pop("interval", 300))
 
     loop = pyev.default_loop()
-    timer = loop.timer(0, interval, capture_and_upload, (token, config))
+    timer = loop.timer(0, interval, capture_and_upload, (token, camera_config))
     timer.start()
     loop.start()
 
