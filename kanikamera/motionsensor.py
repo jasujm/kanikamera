@@ -1,5 +1,7 @@
 """The motion sensor services"""
 
+import logging
+
 import RPi.GPIO as GPIO
 
 class MotionSensor:
@@ -24,6 +26,8 @@ class MotionSensor:
             self.gpio = int(config["gpio"])
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(self.gpio, GPIO.IN)
+            GPIO.add_event_detect(self.gpio, GPIO.RISING)
+            GPIO.add_event_callback(self.gpio, self._motion_detect_event)
         else:
             self.gpio = None
 
@@ -39,3 +43,6 @@ class MotionSensor:
         This method cleans the motion sensor GPIO."""
         if self.gpio:
             GPIO.cleanup(self.gpio)
+
+    def _motion_detect_event(self, gpio):
+        logging.debug("Motion {}".format(GPIO.input(gpio)))
