@@ -4,6 +4,7 @@ from datetime import datetime
 from io import BytesIO
 import logging
 import os
+import signal
 import sys
 
 from dropbox import Dropbox
@@ -50,6 +51,10 @@ def capture_and_upload(watcher, revents):
         logging.warn("Dropbox error: %r", e)
 
 
+def terminate(watcher, revents):
+    watcher.loop.stop()
+
+
 def main():
     init_logging()
 
@@ -66,6 +71,8 @@ def main():
     loop = pyev.default_loop()
     timer = loop.timer(0, interval, capture_and_upload, (token, camera_config))
     timer.start()
+    sig = loop.signal(signal.SIGTERM, terminate)
+    sig.start()
     loop.start()
 
 
