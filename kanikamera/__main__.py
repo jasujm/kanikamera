@@ -47,24 +47,35 @@ def init_config_dict(config, key):
     return {}
 
 
-def capture_and_upload(watcher, revents):
-    token, camera_config = watcher.data
-    imgfile = BytesIO()
+def capture_with_camera(camera_config, callback):
+    img = BytesIO()
     logging.debug("Capturing still image, config: %r", camera_config)
     try:
         with PiCamera(**camera_config) as camera:
-            camera.capture(imgfile, format="jpeg")
+            callback(camera, img)
     except PiCameraError as e:
         logging.warn("PiCamera error: %r", e)
+    return img
+
+
+def upload_image(token, format, img):
     now = datetime.now()
-    upload_file = "/Kanikuvat/{}/{}.jpg".format(
-        now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
+    upload_file = "/Kanikuvat/{}/{}.{}".format(
+        now.strftime("%Y%m%d"), now.strftime("%H%M%S"), format)
     logging.debug("Uploading image to Dropbox, file: %r", upload_file)
     try:
         dropbox = Dropbox(token)
-        dropbox.files_upload(imgfile.getvalue(), upload_file)
+        dropbox.files_upload(img.getvalue(), upload_file)
     except DropboxException as e:
         logging.warn("Dropbox error: %r", e)
+
+
+def capture_and_upload(watcher, revents):
+    def capture_still_image(camera, img):
+        camera.capture(img, format="jpeg")
+    token, camera_config = watcher.data
+    img = capture_with_camera(camera_config, capture_still_image)
+    upload_image(token, "jpg", img)
 
 
 def motion_detected(watcher, revents):
