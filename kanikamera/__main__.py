@@ -43,13 +43,14 @@ def get_config():
 
 def init_config_dict(config, key):
     if key in config:
-        return config[key]
+        return dict(**config[key])
     return {}
 
 
 def capture_and_upload(watcher, revents):
     token, camera_config = watcher.data
     imgfile = BytesIO()
+    logging.debug("Capturing still image, config: %r", camera_config)
     try:
         with PiCamera(**camera_config) as camera:
             camera.capture(imgfile, format="jpeg")
@@ -58,6 +59,7 @@ def capture_and_upload(watcher, revents):
     now = datetime.now()
     upload_file = "/Kanikuvat/{}/{}.jpg".format(
         now.strftime("%Y%m%d"), now.strftime("%H%M%S"))
+    logging.debug("Uploading image to Dropbox, file: %r", upload_file)
     try:
         dropbox = Dropbox(token)
         dropbox.files_upload(imgfile.getvalue(), upload_file)
@@ -66,10 +68,11 @@ def capture_and_upload(watcher, revents):
 
 
 def motion_detected(watcher, revents):
-    logging.debug("Motion %r", watcher.data)
+    logging.debug("Motion detected: %r", watcher.data)
 
 
 def terminate(watcher, revents):
+    logging.debug("Terminate signal received")
     watcher.loop.stop()
 
 
