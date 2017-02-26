@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 from configparser import ConfigParser
 from contextlib import suppress
 from datetime import datetime
@@ -17,8 +18,19 @@ import xdg
 from kanikamera.motionsensor import MotionSensor
 
 
-def init_logging():
+def parse_args():
+    parser = ArgumentParser(description="Kanimakera service")
+    parser.add_argument("-v", "--verbose", action="count", help="verbose logging")
+    return parser.parse_args(sys.argv[1:])
+
+
+def init_logging(args):
     sys.argv[0] = os.path.basename(sys.argv[0])
+    if args.verbose and args.verbose > 0:
+        level = logging.INFO
+        if args.verbose > 1:
+            level = logging.DEBUG
+        logging.basicConfig(level=level)
     logging.root.addHandler(systemd.journal.JournalHandler())
 
 
@@ -62,7 +74,8 @@ def terminate(watcher, revents):
 
 
 def main():
-    init_logging()
+    args = parse_args()
+    init_logging(args)
 
     config = get_config()
     try:
