@@ -1,20 +1,17 @@
 from argparse import ArgumentParser
 from configparser import ConfigParser
 from contextlib import suppress
-from datetime import datetime
-from io import BytesIO
 import logging
 import os
 import signal
 import sys
+import time
 
-from dropbox import Dropbox
-from dropbox.exceptions import DropboxException
-from picamera import PiCamera, PiCameraError
 import pyev
 import systemd.journal
 import xdg
 
+from kanikamera.camera import StillImageManager
 from kanikamera.motionsensor import MotionSensor
 
 
@@ -47,37 +44,6 @@ def init_config_dict(config, key):
     return {}
 
 
-def capture_with_camera(camera_config, callback):
-    img = BytesIO()
-    logging.debug("Capturing still image, config: %r", camera_config)
-    try:
-        with PiCamera(**camera_config) as camera:
-            callback(camera, img)
-    except PiCameraError as e:
-        logging.warn("PiCamera error: %r", e)
-    return img
-
-
-def upload_image(token, format, img):
-    now = datetime.now()
-    upload_file = "/Kanikuvat/{}/{}.{}".format(
-        now.strftime("%Y%m%d"), now.strftime("%H%M%S"), format)
-    logging.debug("Uploading image to Dropbox, file: %r", upload_file)
-    try:
-        dropbox = Dropbox(token)
-        dropbox.files_upload(img.getvalue(), upload_file)
-    except DropboxException as e:
-        logging.warn("Dropbox error: %r", e)
-
-
-def capture_and_upload(watcher, revents):
-    def capture_still_image(camera, img):
-        camera.capture(img, format="jpeg")
-    token, camera_config = watcher.data
-    img = capture_with_camera(camera_config, capture_still_image)
-    upload_image(token, "jpg", img)
-
-
 def motion_detected(watcher, revents):
     logging.debug("Motion detected: %r", watcher.data)
 
@@ -102,8 +68,10 @@ def main():
     interval = float(timer_config.pop("interval", 300))
     motion_sensor_config = init_config_dict(config, "MotionSensor")
 
+    still_image_manager = StillImageManager(token, camera_config, interval)
+
     loop = pyev.default_loop()
-    timer = loop.timer(0, interval, capture_and_upload, (token, camera_config))
+    timer = still_image_manager.get_watcher(loop)
     timer.start()
     sig = loop.signal(signal.SIGTERM, terminate)
     sig.start()
