@@ -29,7 +29,7 @@ class MotionSensor:
             self._watcher = watcher
             GPIO.setmode(GPIO.BCM)
             GPIO.setup(self.gpio, GPIO.IN)
-            GPIO.add_event_detect(self.gpio, GPIO.BOTH)
+            GPIO.add_event_detect(self.gpio, GPIO.RISING)
             GPIO.add_event_callback(self.gpio, self._motion_detect_event)
         else:
             self.gpio = None
