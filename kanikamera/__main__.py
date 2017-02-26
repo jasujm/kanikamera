@@ -5,13 +5,12 @@ import logging
 import os
 import signal
 import sys
-import time
 
 import pyev
 import systemd.journal
 import xdg
 
-from kanikamera.camera import StillImageManager
+from kanikamera.camera import StillImageManager, VideoManager
 from kanikamera.motionsensor import MotionSensor
 
 
@@ -44,10 +43,6 @@ def init_config_dict(config, key):
     return {}
 
 
-def motion_detected(watcher, revents):
-    logging.debug("Motion detected: %r", watcher.data)
-
-
 def terminate(watcher, revents):
     logging.debug("Terminate signal received")
     watcher.loop.stop()
@@ -64,18 +59,24 @@ def main():
         logging.fatal("Dropbox authentication token not found. Exiting.")
         sys.exit(1)
     camera_config = init_config_dict(config, "Camera")
-    timer_config = init_config_dict(config, "Timer")
-    interval = float(timer_config.pop("interval", 300))
     motion_sensor_config = init_config_dict(config, "MotionSensor")
 
+    still_image_config = init_config_dict(config, "StillImage")
+    interval = float(still_image_config.pop("interval", 300))
     still_image_manager = StillImageManager(token, camera_config, interval)
+
+    video_config = init_config_dict(config, "Video")
+    motionless_period = float(video_config.pop("motionless_period", 1800))
+    video_duration = float(video_config.pop("video_duration", 60))
+    video_manager = VideoManager(
+        token, camera_config, motionless_period, video_duration)
 
     loop = pyev.default_loop()
     timer = still_image_manager.get_watcher(loop)
     timer.start()
     sig = loop.signal(signal.SIGTERM, terminate)
     sig.start()
-    motion = loop.async(motion_detected)
+    motion = video_manager.get_watcher(loop)
     motion.start()
 
     with MotionSensor(motion_sensor_config, motion):

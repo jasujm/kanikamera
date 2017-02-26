@@ -2,7 +2,9 @@
 
 import logging
 
+import pyev
 import RPi.GPIO as GPIO
+
 
 class MotionSensor:
     """Class for controlling motion sensor
@@ -53,5 +55,5 @@ class MotionSensor:
         # the RPi.GPIO library unnecessary. pyev does not support that so before
         # rolling up a proper event library that support POLLPRI, async
         # notifications suffice.
-        self._watcher.data = bool(GPIO.input(gpio))
+        self._watcher.data = bool(GPIO.input(gpio)), pyev.time()
         self._watcher.send()
