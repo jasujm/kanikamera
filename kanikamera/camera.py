@@ -8,6 +8,7 @@ to event loop.
 from datetime import datetime
 from io import BytesIO
 import logging
+from time import localtime
 
 from dropbox import Dropbox
 from dropbox.exceptions import DropboxException
@@ -39,6 +40,11 @@ class ImageManagerBase:
                 callback gets a PiCamera object and file the image is written
                 to.
         """
+        now = localtime()
+        if now.tm_hour < 8 or now.tm_hour >= 17 or now.tm_wday >= 5:
+            logging.debug("Time not between 8 and 17, not capturing")
+            return None
+
         img = BytesIO()
         try:
             with PiCamera(**self._camera_config) as camera:
@@ -54,6 +60,9 @@ class ImageManagerBase:
             format: file extension for the uploaded file
             img: the contents (bytes) of the image
         """
+        if img is None:
+            return
+
         now = datetime.now()
         upload_file = "/Kanikuvat/{}/{}.{}".format(
             now.strftime("%Y%m%d"), now.strftime("%H%M%S"), format)
