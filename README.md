@@ -18,6 +18,9 @@ stop when I come back. The unit file is very simple
     [Unit]
     Description=Kanikamera
 
+    [Install]
+    WantedBy=multi-user.target
+
     [Service]
     ExecStart=/path/to/kanikamera
     User=<user>
