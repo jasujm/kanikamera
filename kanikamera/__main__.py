@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
 from configparser import ConfigParser
-from contextlib import suppress
 import logging
 import os
 import signal
