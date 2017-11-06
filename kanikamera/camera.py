@@ -8,6 +8,8 @@ to event loop.
 from datetime import datetime
 from io import BytesIO
 import logging
+import subprocess
+from tempfile import NamedTemporaryFile
 from time import localtime
 
 from dropbox import Dropbox
@@ -31,6 +33,7 @@ class ImageManagerBase:
         """
         self._token = token
         self._camera_config = camera_config
+        self._framerate = None
 
     def capture_with_camera(self, callback):
         """Capture image with camera
@@ -48,6 +51,7 @@ class ImageManagerBase:
         img = BytesIO()
         try:
             with PiCamera(**self._camera_config) as camera:
+                self._framerate = camera.framerate
                 callback(camera, img)
         except PiCameraError as e:
             logging.warn("PiCamera error: %r", e)
@@ -60,16 +64,13 @@ class ImageManagerBase:
             format: file extension for the uploaded file
             img: the contents (bytes) of the image
         """
-        if img is None:
-            return
-
         now = datetime.now()
         upload_file = "/Kanikuvat/{}/{}.{}".format(
             now.strftime("%Y%m%d"), now.strftime("%H%M%S"), format)
         logging.debug("Uploading image to Dropbox, file: %r", upload_file)
         try:
             dropbox = Dropbox(self._token)
-            dropbox.files_upload(img.getvalue(), upload_file)
+            dropbox.files_upload(img, upload_file)
         except DropboxException as e:
             logging.warn("Dropbox error: %r", e)
 
@@ -101,7 +102,8 @@ class StillImageManager(ImageManagerBase):
             camera.capture(img, format="jpeg")
         logging.debug("Capturing still image, config: %r", self._camera_config)
         img = self.capture_with_camera(capture_still_image)
-        self.upload_image("jpg", img)
+        if img:
+            self.upload_image("jpg", img.getvalue())
 
 
 class VideoManager(ImageManagerBase):
@@ -147,7 +149,24 @@ class VideoManager(ImageManagerBase):
                 motion_time - self._last_motion_time > self._motionless_period):
                 logging.debug("Capturing video")
                 img = self.capture_with_camera(self._capture_video)
-                self.upload_image("mp4", img)
+                if img:
+                    # TODO: Pipes would work better than temporary files here
+                    # Optimally data could be streamed to avconv while still
+                    # being captured
+                    with NamedTemporaryFile(suffix=".h264") as tmpcam, \
+                         NamedTemporaryFile(suffix=".mp4") as tmpdbx:
+                        tmpcam.write(img.getvalue())
+                        args = ["avconv", "-y", "-r", str(self._framerate),
+                                "-i", tmpcam.name, tmpdbx.name]
+                        logging.debug("Calling avconv with args: %r", args)
+                        result = subprocess.call(
+                            args, stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL)
+                        if res == 0:
+                            tmpdbx.seek(0)
+                            self.upload_image("mp4", tmpdbx.read())
+                        else:
+                            logging.warn("Converting video failed: %r", result)
             self._last_motion_time = motion_time
 
     def _capture_video(self, camera, img):
