@@ -143,7 +143,7 @@ class VideoManager(ImageManagerBase):
                     self._last_motion_time, motion_time))
             if (not self._last_motion_time or
                 motion_time - self._last_motion_time > self._motionless_period):
-                logging.debug("Capturing video")
+                logging.debug("Capturing video: %r", self._camera_config)
                 self.capture_with_camera(self._capture_video)
             self._last_motion_time = motion_time
 
