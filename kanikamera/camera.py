@@ -33,29 +33,24 @@ class ImageManagerBase:
         """
         self._token = token
         self._camera_config = camera_config
-        self._framerate = None
 
     def capture_with_camera(self, callback):
         """Capture image with camera
 
         Args:
             callback: Callback for capturing image with initialized camera. The
-                callback gets a PiCamera object and file the image is written
-                to.
+                PiCamera object is passed as parameter to the callback.
         """
         now = localtime()
         if now.tm_hour < 8 or now.tm_hour >= 17 or now.tm_wday >= 5:
             logging.debug("Time not between 8 and 17, not capturing")
             return None
 
-        img = BytesIO()
         try:
             with PiCamera(**self._camera_config) as camera:
-                self._framerate = camera.framerate
-                callback(camera, img)
+                callback(camera)
         except PiCameraError as e:
             logging.warn("PiCamera error: %r", e)
-        return img
 
     def upload_image(self, format, img):
         """Upload image to Dropbox
@@ -98,11 +93,12 @@ class StillImageManager(ImageManagerBase):
         return loop.timer(0, self._interval, self._capture_and_upload)
 
     def _capture_and_upload(self, watcher, revents):
-        def capture_still_image(camera, img):
-            camera.capture(img, format="jpeg")
+        self.capture_with_camera(self._capture_still_image)
+
+    def _capture_still_image(self, camera):
         logging.debug("Capturing still image, config: %r", self._camera_config)
-        img = self.capture_with_camera(capture_still_image)
-        if img:
+        with BytesIO() as img:
+            camera.capture(img, format="jpeg")
             self.upload_image("jpg", img.getvalue())
 
 
@@ -148,28 +144,25 @@ class VideoManager(ImageManagerBase):
             if (not self._last_motion_time or
                 motion_time - self._last_motion_time > self._motionless_period):
                 logging.debug("Capturing video")
-                img = self.capture_with_camera(self._capture_video)
-                if img:
-                    # TODO: Pipes would work better than temporary files here
-                    # Optimally data could be streamed to avconv while still
-                    # being captured
-                    with NamedTemporaryFile(suffix=".h264") as tmpcam, \
-                         NamedTemporaryFile(suffix=".mp4") as tmpdbx:
-                        tmpcam.write(img.getvalue())
-                        args = ["avconv", "-y", "-r", str(self._framerate),
-                                "-i", tmpcam.name, tmpdbx.name]
-                        logging.debug("Calling avconv with args: %r", args)
-                        result = subprocess.call(
-                            args, stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL)
-                        if res == 0:
-                            tmpdbx.seek(0)
-                            self.upload_image("mp4", tmpdbx.read())
-                        else:
-                            logging.warn("Converting video failed: %r", result)
+                self.capture_with_camera(self._capture_video)
             self._last_motion_time = motion_time
 
-    def _capture_video(self, camera, img):
-        camera.start_recording(img, format="h264")
-        camera.wait_recording(self._video_duration)
-        camera.stop_recording()
+    def _capture_video(self, camera):
+        # TODO: Pipes would work better than temporary files here
+        # Optimally data could be streamed to avconv while still
+        # being captured
+        with NamedTemporaryFile(suffix=".h264") as tmpcam, \
+             NamedTemporaryFile(suffix=".mp4") as tmpdbx:
+            camera.start_recording(tmpcam, format="h264")
+            camera.wait_recording(self._video_duration)
+            camera.stop_recording()
+            args = ["avconv", "-y", "-r", str(camera.framerate),
+                    "-i", tmpcam.name, tmpdbx.name]
+            logging.debug("Calling avconv with args: %r", args)
+            result = subprocess.call(
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if result == 0:
+                tmpdbx.seek(0)
+                self.upload_image("mp4", tmpdbx.read())
+            else:
+                logging.warn("Converting video failed: %r", result)
