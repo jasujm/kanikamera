@@ -9,7 +9,7 @@ from datetime import datetime
 from io import BytesIO
 import logging
 import subprocess
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryFile, NamedTemporaryFile
 from time import localtime
 
 from dropbox import Dropbox
@@ -151,18 +151,18 @@ class VideoManager(ImageManagerBase):
         # TODO: Pipes would work better than temporary files here
         # Optimally data could be streamed to avconv while still
         # being captured
-        with NamedTemporaryFile(suffix=".h264") as tmpcam, \
-             NamedTemporaryFile(suffix=".mp4") as tmpdbx:
+        with TemporaryFile() as tmpcam, NamedTemporaryFile() as tmpdbx:
             camera.start_recording(tmpcam, format="h264")
             camera.wait_recording(self._video_duration)
             camera.stop_recording()
             args = ["avconv", "-y", "-r", str(camera.framerate),
-                    "-i", tmpcam.name, tmpdbx.name]
+                    "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
             logging.debug("Calling avconv with args: %r", args)
-            result = subprocess.call(
-                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result == 0:
+            tmpcam.seek(0)
+            p = subprocess.Popen(args, stdin=tmpcam, stderr=subprocess.PIPE)
+            _, err = p.communicate()
+            if p.returncode == 0:
                 tmpdbx.seek(0)
                 self.upload_image("mp4", tmpdbx.read())
             else:
-                logging.warn("Converting video failed: %r", result)
+                logging.warn("Converting video failed: %r", err)
