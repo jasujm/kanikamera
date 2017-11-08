@@ -95,10 +95,10 @@ class StillImageManager(ImageManagerBase):
         return loop.timer(0, self._interval, self._capture_and_upload)
 
     def _capture_and_upload(self, watcher, revents):
+        logging.debug("Capturing still image, config: %r", self._camera_config)
         self.capture_with_camera(self._capture_still_image)
 
     def _capture_still_image(self, camera):
-        logging.debug("Capturing still image, config: %r", self._camera_config)
         with BytesIO() as img:
             camera.capture(img, format="jpeg")
             self.upload_image("jpg", img.getvalue())
