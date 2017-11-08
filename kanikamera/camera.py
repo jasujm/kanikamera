@@ -5,11 +5,13 @@ response to events. The exposed interface is pyev watchers that can be attached
 to event loop.
 """
 
+from contextlib import ExitStack
 from datetime import datetime
 from io import BytesIO
 import logging
+import os
 import subprocess
-from tempfile import TemporaryFile, NamedTemporaryFile
+from tempfile import NamedTemporaryFile
 from time import localtime
 
 from dropbox import Dropbox
@@ -148,18 +150,20 @@ class VideoManager(ImageManagerBase):
             self._last_motion_time = motion_time
 
     def _capture_video(self, camera):
-        # TODO: Pipes would work better than temporary files here
-        # Optimally data could be streamed to avconv while still
-        # being captured
-        with TemporaryFile() as tmpcam, NamedTemporaryFile() as tmpdbx:
-            camera.start_recording(tmpcam, format="h264")
-            camera.wait_recording(self._video_duration)
-            camera.stop_recording()
+        with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:
+            r, w = os.pipe2(os.O_CLOEXEC)
+            s1.callback(lambda: os.close(w))
+            s2.callback(lambda: os.close(r))
             args = ["avconv", "-y", "-r", str(camera.framerate),
                     "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
             logging.debug("Calling avconv with args: %r", args)
-            tmpcam.seek(0)
-            p = subprocess.Popen(args, stdin=tmpcam, stderr=subprocess.PIPE)
+            p = subprocess.Popen(args, stdin=r, stderr=subprocess.PIPE)
+            s2.close()
+            camera.start_recording(
+                open(w, 'bw', buffering=0, closefd=False), format="h264")
+            camera.wait_recording(self._video_duration)
+            camera.stop_recording()
+            s1.close()
             _, err = p.communicate()
             if p.returncode == 0:
                 tmpdbx.seek(0)
