@@ -44,8 +44,8 @@ class ImageManagerBase:
                 PiCamera object is passed as parameter to the callback.
         """
         now = localtime()
-        if now.tm_hour < 8 or now.tm_hour >= 17 or now.tm_wday >= 5:
-            logging.debug("Time not between 8 and 17, not capturing")
+        if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
+            logging.debug("Time not between 9 and 17, not capturing")
             return None
 
         try:
