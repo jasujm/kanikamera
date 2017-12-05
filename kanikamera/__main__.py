@@ -75,6 +75,8 @@ def main():
     timer.start()
     sig = loop.signal(signal.SIGTERM, terminate)
     sig.start()
+    sig = loop.signal(signal.SIGINT, terminate)
+    sig.start()
     motion = video_manager.get_watcher(loop)
     motion.start()
 
