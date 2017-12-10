@@ -43,7 +43,7 @@ def init_config_dict(config, key):
 
 
 def terminate(watcher, revents):
-    logging.debug("Terminate signal received")
+    logging.debug("Signal received. Terminating.")
     watcher.loop.stop()
 
 
@@ -73,10 +73,10 @@ def main():
     loop = pyev.default_loop()
     timer = still_image_manager.get_watcher(loop)
     timer.start()
-    sig = loop.signal(signal.SIGTERM, terminate)
-    sig.start()
-    sig = loop.signal(signal.SIGINT, terminate)
-    sig.start()
+    sigterm = loop.signal(signal.SIGTERM, terminate)
+    sigterm.start()
+    sigint = loop.signal(signal.SIGINT, terminate)
+    sigint.start()
     motion = video_manager.get_watcher(loop)
     motion.start()
 
