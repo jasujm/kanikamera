@@ -138,6 +138,9 @@ class VideoManager(ImageManagerBase):
 
     def _motion_detected(self, watcher, revents):
         logging.debug("Motion detected: %r", watcher.data)
+        if not watcher.data or len(watcher.data) != 2:
+            logging.warning("Unexpected motion capture data")
+            return
         is_motion, motion_time = watcher.data
         if is_motion:
             logging.debug(
