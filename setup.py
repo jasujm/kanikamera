@@ -15,7 +15,6 @@ setup(
         "picamera>=1.12",
         "xdg>=1.0",
         "systemd-python",
-        "pyev>=0.9",
         "RPi.GPIO>=0.6"
     ],
 )

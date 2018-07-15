@@ -1,10 +1,11 @@
 """Camera services
 
 This module contains manager classes for capturing still images and video in
-response to events. The exposed interface is pyev watchers that can be attached
-to event loop.
+response to events. The exposed interface is coroutines that can be attached to
+event loop.
 """
 
+import asyncio
 from contextlib import ExitStack
 from datetime import datetime
 from io import BytesIO
@@ -90,13 +91,15 @@ class StillImageManager(ImageManagerBase):
         super(StillImageManager, self).__init__(token, camera_config)
         self._interval = interval
 
-    def get_watcher(self, loop):
-        """Get watcher that can be registered to event loop"""
-        return loop.timer(0, self._interval, self._capture_and_upload)
-
-    def _capture_and_upload(self, watcher, revents):
-        logging.debug("Capturing still image, config: %r", self._camera_config)
-        self.capture_with_camera(self._capture_still_image)
+    async def __call__(self):
+        """Generate coroutine that takes periodic photos when attached to event loop"""
+        while True:
+            logging.debug("Capturing still image, config: %r", self._camera_config)
+            self.capture_with_camera(self._capture_still_image)
+            try:
+                await asyncio.sleep(self._interval)
+            except asyncio.CancelledError:
+                break
 
     def _capture_still_image(self, camera):
         with BytesIO() as img:
@@ -126,31 +129,34 @@ class VideoManager(ImageManagerBase):
         self._video_duration = video_duration
         self._last_motion_time = None
 
-    def get_watcher(self, loop):
-        """Get watcher that can be registered to event loop
+    async def __call__(self, is_motion, event_time):
+        """Generate coroutine that captures video when motion is detected
 
-        The watcher is an py:class:`pyev.Async` instance. In order to handle a
-        motion event, the watched data must be set as a tuple containing bool
-        indicating whether motion has been detected and monotonic time of the
-        event.
+        Args:
+            is_motion: True if motion was detected, False if detection stopped
+            event_time: Timestamp of the event
+
+        Todo:
+            It's not very coroutin-y because it blocks for capturing video,
+            converting and uploading. And it doesn't actually detect motion
+            either but depends on external object to schedule it with event
+            data. In the future it could be refactored to usefully to monitor
+            motion itself using semaphores, condition variables etc. as
+            mechanism, and yield back to event loop in useful manner.
         """
-        return loop.async(self._motion_detected)
+        self._motion_detected(is_motion, event_time)
 
-    def _motion_detected(self, watcher, revents):
-        logging.debug("Motion detected: %r", watcher.data)
-        if not watcher.data or len(watcher.data) != 2:
-            logging.warning("Unexpected motion capture data")
-            return
-        is_motion, motion_time = watcher.data
+    def _motion_detected(self, is_motion, event_time):
+        logging.debug("Motion detected: %r, Time: %r", is_motion, event_time)
         if is_motion:
             logging.debug(
                 "Motion was detected, last: {}, now: {}".format(
-                    self._last_motion_time, motion_time))
+                    self._last_motion_time, event_time))
             if (not self._last_motion_time or
-                motion_time - self._last_motion_time > self._motionless_period):
+                event_time - self._last_motion_time > self._motionless_period):
                 logging.debug("Capturing video: %r", self._camera_config)
                 self.capture_with_camera(self._capture_video)
-            self._last_motion_time = motion_time
+            self._last_motion_time = event_time
 
     def _capture_video(self, camera):
         with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:

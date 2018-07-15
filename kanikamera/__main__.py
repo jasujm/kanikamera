@@ -1,3 +1,4 @@
+import asyncio
 from argparse import ArgumentParser
 from configparser import ConfigParser
 import logging
@@ -5,7 +6,6 @@ import os
 import signal
 import sys
 
-import pyev
 import systemd.journal
 import xdg
 
@@ -42,9 +42,18 @@ def init_config_dict(config, key):
     return {}
 
 
-def terminate(watcher, revents):
-    logging.debug("Signal received. Terminating.")
-    watcher.loop.stop()
+def terminate(loop):
+    async def do_terminate():
+        current_task = asyncio.Task.current_task(loop=loop)
+        tasks_to_cancel = [
+            task for task in asyncio.Task.all_tasks(loop=loop)
+            if task is not current_task]
+        for task in tasks_to_cancel:
+            task.cancel()
+        await asyncio.gather(*tasks_to_cancel)
+        loop.stop()
+    logging.debug("Signal received. Scheduling termination.")
+    loop.create_task(do_terminate())
 
 
 def main():
@@ -70,18 +79,14 @@ def main():
     video_manager = VideoManager(
         token, camera_config, motionless_period, video_duration)
 
-    loop = pyev.default_loop()
-    timer = still_image_manager.get_watcher(loop)
-    timer.start()
-    sigterm = loop.signal(signal.SIGTERM, terminate)
-    sigterm.start()
-    sigint = loop.signal(signal.SIGINT, terminate)
-    sigint.start()
-    motion = video_manager.get_watcher(loop)
-    motion.start()
+    loop = asyncio.get_event_loop()
+    loop.add_signal_handler(signal.SIGTERM, terminate, loop)
+    loop.add_signal_handler(signal.SIGINT, terminate, loop)
+    loop.create_task(still_image_manager())
 
-    with MotionSensor(motion_sensor_config, motion):
-        loop.start()
+    with MotionSensor(motion_sensor_config, loop, video_manager):
+        loop.run_forever()
+    loop.close()
 
 if __name__ == '__main__':
     main()
