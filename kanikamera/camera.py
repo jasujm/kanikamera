@@ -10,7 +10,7 @@ Todo:
 """
 
 import asyncio
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
 from datetime import datetime
 from io import BytesIO
 import logging
@@ -104,12 +104,10 @@ class StillImageManager(ImageManagerBase):
 
     async def __call__(self):
         """Generate coroutine that takes periodic photos when attached to event loop"""
-        while True:
-            self.capture_with_camera(self._capture_still_image)
-            try:
+        with suppress(asyncio.CancelledError):
+            while not asyncio.Task.current_task().cancelled():
+                self.capture_with_camera(self._capture_still_image)
                 await asyncio.sleep(self._interval)
-            except asyncio.CancelledError:
-                break
 
     def _capture_still_image(self, camera):
         logging.debug("Capturing still image, config: %r", self._camera_config)
@@ -147,11 +145,12 @@ class VideoManager(ImageManagerBase):
             motion_detect_event: awaitable event for signaling motion detected
             motion_stop_event: awaitable event for signaling motion stopped
         """
-        while True:
-            logging.debug("Waiting to detect motion")
-            await motion_detect_event.wait()
-            self._handle_motion_detected()
-            await motion_stop_event.wait()
+        with suppress(asyncio.CancelledError):
+            while not asyncio.Task.current_task().cancelled():
+                logging.debug("Waiting to detect motion")
+                await motion_detect_event.wait()
+                self._handle_motion_detected()
+                await motion_stop_event.wait()
 
     def _handle_motion_detected(self):
         motion_time = asyncio.get_event_loop().time()
