@@ -22,6 +22,7 @@ from time import localtime
 from dropbox import Dropbox
 from dropbox.exceptions import DropboxException
 from picamera import PiCamera, PiCameraError
+from requests.exceptions import RequestException
 
 
 class ImageManagerBase:
@@ -79,7 +80,7 @@ class ImageManagerBase:
         try:
             dropbox = Dropbox(self._token)
             dropbox.files_upload(img, upload_file)
-        except DropboxException:
+        except (DropboxException, RequestException):
             logging.exception("Dropbox failure")
 
 
