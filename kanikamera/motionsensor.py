@@ -13,7 +13,7 @@ class MotionSensor:
     responsible for generating events when the sensor detects motion.
 
     This class defines context manager and can be used in with statement
-    ensuring that :func:`cleanup` is called.
+    ensuring that :func:`close` is called.
     """
 
     def __init__(self, config, loop, coroutine):
@@ -42,12 +42,12 @@ class MotionSensor:
         return self
 
     def __exit__(self, *args):
-        self.cleanup()
+        self.close()
 
-    def cleanup(self):
+    def close(self):
         """Perform cleanup
 
-        This method cleans the motion sensor GPIO."""
+        This method cleans up the motion sensor GPIO."""
         if self.gpio:
             GPIO.cleanup(self.gpio)
 
