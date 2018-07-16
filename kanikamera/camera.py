@@ -42,7 +42,7 @@ class ImageManagerBase:
         self._token = token
         self._camera_config = camera_config
 
-    def capture_with_camera(self, callback):
+    async def capture_with_camera(self, coro):
         """Capture image with camera
 
         Image is only captured during office hours (Mon-Fri 9-17). The actual
@@ -57,16 +57,16 @@ class ImageManagerBase:
         if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
             logging.debug(
                 "Requested to capture image/video using %r but it's not office hours",
-                callback)
+                coro)
             return
 
         try:
             with PiCamera(**self._camera_config) as camera:
-                callback(camera)
+                await coro(camera)
         except PiCameraError:
             logging.exception("PiCamera failure")
 
-    def upload_image(self, format, img):
+    async def upload_image(self, format, img):
         """Upload image to Dropbox
 
         Args:
@@ -76,12 +76,14 @@ class ImageManagerBase:
         now = datetime.now()
         upload_file = "/Kanikuvat/{}/{}.{}".format(
             now.strftime("%Y%m%d"), now.strftime("%H%M%S"), format)
-        logging.debug("Uploading image to Dropbox, file: %r", upload_file)
-        try:
-            dropbox = Dropbox(self._token)
-            dropbox.files_upload(img, upload_file)
-        except (DropboxException, RequestException):
-            logging.exception("Dropbox failure")
+        def do_upload_image():
+            logging.debug("Uploading image to Dropbox, file: %r", upload_file)
+            try:
+                dropbox = Dropbox(self._token)
+                dropbox.files_upload(img, upload_file)
+            except (DropboxException, RequestException):
+                logging.exception("Dropbox failure")
+        await asyncio.get_event_loop().run_in_executor(None, do_upload_image)
 
 
 class StillImageManager(ImageManagerBase):
@@ -106,14 +108,14 @@ class StillImageManager(ImageManagerBase):
         """Generate coroutine that takes periodic photos when attached to event loop"""
         with suppress(asyncio.CancelledError):
             while not asyncio.Task.current_task().cancelled():
-                self.capture_with_camera(self._capture_still_image)
+                await self.capture_with_camera(self._capture_still_image)
                 await asyncio.sleep(self._interval)
 
-    def _capture_still_image(self, camera):
+    async def _capture_still_image(self, camera):
         logging.debug("Capturing still image, config: %r", self._camera_config)
         with BytesIO() as img:
             camera.capture(img, format="jpeg")
-            self.upload_image("jpg", img.getvalue())
+            await self.upload_image("jpg", img.getvalue())
 
 
 class VideoManager(ImageManagerBase):
@@ -149,20 +151,20 @@ class VideoManager(ImageManagerBase):
             while not asyncio.Task.current_task().cancelled():
                 logging.debug("Waiting to detect motion")
                 await motion_detect_event.wait()
-                self._handle_motion_detected()
+                await self._handle_motion_detected()
                 await motion_stop_event.wait()
 
-    def _handle_motion_detected(self):
+    async def _handle_motion_detected(self):
         motion_time = asyncio.get_event_loop().time()
         logging.debug(
             "Motion detected at %r. Last was: %r",
             motion_time, self._last_motion_time)
         if (not self._last_motion_time or
             motion_time - self._last_motion_time > self._motionless_period):
-            self.capture_with_camera(self._capture_video)
+            await self.capture_with_camera(self._capture_video)
         self._last_motion_time = motion_time
 
-    def _capture_video(self, camera):
+    async def _capture_video(self, camera):
         logging.debug("Capturing video, config: %r", self._camera_config)
         with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:
             r, w = os.pipe2(os.O_CLOEXEC)
@@ -181,6 +183,6 @@ class VideoManager(ImageManagerBase):
             _, err = p.communicate()
             if p.returncode == 0:
                 tmpdbx.seek(0)
-                self.upload_image("mp4", tmpdbx.read())
+                await self.upload_image("mp4", tmpdbx.read())
             else:
                 logging.warn("Converting video failed: %r", err)

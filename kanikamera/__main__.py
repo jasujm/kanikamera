@@ -1,5 +1,6 @@
 import asyncio
 from argparse import ArgumentParser
+import concurrent.futures
 from configparser import ConfigParser
 import logging
 import os
@@ -84,7 +85,9 @@ def main():
     loop.add_signal_handler(signal.SIGINT, terminate, loop)
     loop.create_task(still_image_manager())
 
-    with MotionSensor(motion_sensor_config, loop) as motion_sensor:
+    with concurrent.futures.ThreadPoolExecutor() as executor, \
+         MotionSensor(motion_sensor_config, loop) as motion_sensor:
+        loop.set_default_executor(executor)
         loop.create_task(
             video_manager(
                 motion_sensor.motion_detect_event, motion_sensor.motion_stop_event))
