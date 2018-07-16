@@ -176,14 +176,18 @@ class VideoManager(ImageManagerBase):
 
     async def _capture_video(self, camera):
         logging.debug("Capturing video, config: %r", self._camera_config)
+        loop = asyncio.get_event_loop()
         with NamedTemporaryFile() as tmpdbx:
+            # This might be considered abusing the synchronous subprocess API in
+            # asynchronous code. The asyncio subprocess API makes it tedious to
+            # write to the pipe feeding avconv its input from the thread running
+            # the camera.
             args = ["avconv", "-y", "-r", str(camera.framerate),
                     "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
             logging.debug("Calling avconv with args: %r", args)
             p = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-            await asyncio.get_event_loop().run_in_executor(
-                None, self._record_video, camera, p.stdin)
-            _, err = p.communicate()
+            await loop.run_in_executor(None, self._record_video, camera, p.stdin)
+            _, err = await loop.run_in_executor(None, p.communicate)
             if p.returncode == 0:
                 tmpdbx.seek(0)
                 await self.upload_image("mp4", tmpdbx.read())
