@@ -12,6 +12,7 @@ Todo:
 import asyncio
 from contextlib import ExitStack, suppress
 from datetime import datetime
+import functools
 from io import BytesIO
 import logging
 import os
@@ -41,6 +42,7 @@ class ImageManagerBase:
         """
         self._token = token
         self._camera_config = camera_config
+        self._camera_lock = asyncio.Lock()
 
     async def capture_with_camera(self, coro):
         """Capture image with camera
@@ -50,8 +52,10 @@ class ImageManagerBase:
         argument.
 
         Args:
-            callback: Callback for capturing image with initialized camera. The
-                PiCamera object is passed as parameter to the callback.
+            coro: Coroutine function for capturing image with camera. The
+               PiCamera object is passed as an argument to the generator. While
+               awaiting for the generator, a lock is held to prevent any other
+               callback accessing the camera hardware.
         """
         now = localtime()
         if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
@@ -61,8 +65,9 @@ class ImageManagerBase:
             return
 
         try:
-            with PiCamera(**self._camera_config) as camera:
-                await coro(camera)
+            async with self._camera_lock:
+                with PiCamera(**self._camera_config) as camera:
+                    await coro(camera)
         except PiCameraError:
             logging.exception("PiCamera failure")
 
@@ -114,7 +119,8 @@ class StillImageManager(ImageManagerBase):
     async def _capture_still_image(self, camera):
         logging.debug("Capturing still image, config: %r", self._camera_config)
         with BytesIO() as img:
-            camera.capture(img, format="jpeg")
+            await asyncio.get_event_loop().run_in_executor(
+                None, functools.partial(camera.capture, img, format="jpeg"))
             await self.upload_image("jpg", img.getvalue())
 
 
@@ -164,6 +170,11 @@ class VideoManager(ImageManagerBase):
             await self.capture_with_camera(self._capture_video)
         self._last_motion_time = motion_time
 
+    def _record_video(self, camera, f):
+        camera.start_recording(f, format="h264")
+        camera.wait_recording(self._video_duration)
+        camera.stop_recording()
+
     async def _capture_video(self, camera):
         logging.debug("Capturing video, config: %r", self._camera_config)
         with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:
@@ -175,10 +186,9 @@ class VideoManager(ImageManagerBase):
             logging.debug("Calling avconv with args: %r", args)
             p = subprocess.Popen(args, stdin=r, stderr=subprocess.PIPE)
             s2.close()
-            camera.start_recording(
-                open(w, 'bw', buffering=0, closefd=False), format="h264")
-            camera.wait_recording(self._video_duration)
-            camera.stop_recording()
+            with open(w, 'bw', buffering=0, closefd=False) as f:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._record_video, camera, f)
             s1.close()
             _, err = p.communicate()
             if p.returncode == 0:
