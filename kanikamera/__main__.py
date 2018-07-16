@@ -84,7 +84,10 @@ def main():
     loop.add_signal_handler(signal.SIGINT, terminate, loop)
     loop.create_task(still_image_manager())
 
-    with MotionSensor(motion_sensor_config, loop, video_manager):
+    with MotionSensor(motion_sensor_config, loop) as motion_sensor:
+        loop.create_task(
+            video_manager(
+                motion_sensor.motion_detect_event, motion_sensor.motion_stop_event))
         loop.run_forever()
     loop.close()
 

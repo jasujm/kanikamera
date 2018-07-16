@@ -3,6 +3,10 @@
 This module contains manager classes for capturing still images and video in
 response to events. The exposed interface is coroutines that can be attached to
 event loop.
+
+Todo:
+    Do not block in the event loop when capturing/converting/uploading
+    images/videos.
 """
 
 import asyncio
@@ -135,36 +139,31 @@ class VideoManager(ImageManagerBase):
         self._video_duration = video_duration
         self._last_motion_time = None
 
-    async def __call__(self, is_motion, event_time):
+    async def __call__(self, motion_detect_event, motion_stop_event):
         """Generate coroutine that captures video when motion is detected
 
         Args:
-            is_motion: True if motion was detected, False if detection stopped
-            event_time: Timestamp of the event
-
-        Todo:
-            It's not very coroutin-y because it blocks for capturing video,
-            converting and uploading. And it doesn't actually detect motion
-            either but depends on external object to schedule it with event
-            data. In the future it could be refactored to usefully to monitor
-            motion itself using semaphores, condition variables etc. as
-            mechanism, and yield back to event loop in useful manner.
+            motion_detect_event: awaitable event for signaling motion detected
+            motion_stop_event: awaitable event for signaling motion stopped
         """
-        self._motion_detected(is_motion, event_time)
+        while True:
+            logging.debug("Waiting to detect motion")
+            await motion_detect_event.wait()
+            self._handle_motion_detected()
+            await motion_stop_event.wait()
 
-    def _motion_detected(self, is_motion, event_time):
-        logging.debug("Motion detected: %r, Time: %r", is_motion, event_time)
-        if is_motion:
-            logging.debug(
-                "Motion was detected, last: {}, now: {}".format(
-                    self._last_motion_time, event_time))
-            if (not self._last_motion_time or
-                event_time - self._last_motion_time > self._motionless_period):
-                logging.debug("Capturing video: %r", self._camera_config)
-                self.capture_with_camera(self._capture_video)
-            self._last_motion_time = event_time
+    def _handle_motion_detected(self):
+        motion_time = asyncio.get_event_loop().time()
+        logging.debug(
+            "Motion detected at %r. Last was: %r",
+            motion_time, self._last_motion_time)
+        if (not self._last_motion_time or
+            motion_time - self._last_motion_time > self._motionless_period):
+            self.capture_with_camera(self._capture_video)
+        self._last_motion_time = motion_time
 
     def _capture_video(self, camera):
+        logging.debug("Capturing video, config: %r", self._camera_config)
         with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:
             r, w = os.pipe2(os.O_CLOEXEC)
             s1.callback(lambda: os.close(w))
