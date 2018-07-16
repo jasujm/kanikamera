@@ -40,20 +40,26 @@ class ImageManagerBase:
     def capture_with_camera(self, callback):
         """Capture image with camera
 
+        Image is only captured during office hours (Mon-Fri 9-17). The actual
+        capturing is delegated to a callback that gets camera resource as its
+        argument.
+
         Args:
             callback: Callback for capturing image with initialized camera. The
                 PiCamera object is passed as parameter to the callback.
         """
         now = localtime()
         if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
-            logging.debug("Time not between 9 and 17, not capturing")
-            return None
+            logging.debug(
+                "Requested to capture image/video using %r but it's not office hours",
+                callback)
+            return
 
         try:
             with PiCamera(**self._camera_config) as camera:
                 callback(camera)
-        except PiCameraError as e:
-            logging.warn("PiCamera error: %r", e)
+        except PiCameraError:
+            logging.exception("PiCamera failure")
 
     def upload_image(self, format, img):
         """Upload image to Dropbox
@@ -69,8 +75,8 @@ class ImageManagerBase:
         try:
             dropbox = Dropbox(self._token)
             dropbox.files_upload(img, upload_file)
-        except DropboxException as e:
-            logging.warn("Dropbox error: %r", e)
+        except DropboxException:
+            logging.exception("Dropbox failure")
 
 
 class StillImageManager(ImageManagerBase):
@@ -94,7 +100,6 @@ class StillImageManager(ImageManagerBase):
     async def __call__(self):
         """Generate coroutine that takes periodic photos when attached to event loop"""
         while True:
-            logging.debug("Capturing still image, config: %r", self._camera_config)
             self.capture_with_camera(self._capture_still_image)
             try:
                 await asyncio.sleep(self._interval)
@@ -102,6 +107,7 @@ class StillImageManager(ImageManagerBase):
                 break
 
     def _capture_still_image(self, camera):
+        logging.debug("Capturing still image, config: %r", self._camera_config)
         with BytesIO() as img:
             camera.capture(img, format="jpeg")
             self.upload_image("jpg", img.getvalue())
