@@ -10,12 +10,11 @@ Todo:
 """
 
 import asyncio
-from contextlib import ExitStack, suppress
+import contextlib
 from datetime import datetime
 import functools
 from io import BytesIO
 import logging
-import os
 import subprocess
 from tempfile import NamedTemporaryFile
 from time import localtime
@@ -111,7 +110,7 @@ class StillImageManager(ImageManagerBase):
 
     async def __call__(self):
         """Generate coroutine that takes periodic photos when attached to event loop"""
-        with suppress(asyncio.CancelledError):
+        with contextlib.suppress(asyncio.CancelledError):
             while not asyncio.Task.current_task().cancelled():
                 await self.capture_with_camera(self._capture_still_image)
                 await asyncio.sleep(self._interval)
@@ -153,7 +152,7 @@ class VideoManager(ImageManagerBase):
             motion_detect_event: awaitable event for signaling motion detected
             motion_stop_event: awaitable event for signaling motion stopped
         """
-        with suppress(asyncio.CancelledError):
+        with contextlib.suppress(asyncio.CancelledError):
             while not asyncio.Task.current_task().cancelled():
                 logging.debug("Waiting to detect motion")
                 await motion_detect_event.wait()
@@ -177,19 +176,13 @@ class VideoManager(ImageManagerBase):
 
     async def _capture_video(self, camera):
         logging.debug("Capturing video, config: %r", self._camera_config)
-        with NamedTemporaryFile() as tmpdbx, ExitStack() as s1, ExitStack() as s2:
-            r, w = os.pipe2(os.O_CLOEXEC)
-            s1.callback(lambda: os.close(w))
-            s2.callback(lambda: os.close(r))
+        with NamedTemporaryFile() as tmpdbx:
             args = ["avconv", "-y", "-r", str(camera.framerate),
                     "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
             logging.debug("Calling avconv with args: %r", args)
-            p = subprocess.Popen(args, stdin=r, stderr=subprocess.PIPE)
-            s2.close()
-            with open(w, 'bw', buffering=0, closefd=False) as f:
-                await asyncio.get_event_loop().run_in_executor(
-                    None, self._record_video, camera, f)
-            s1.close()
+            p = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            await asyncio.get_event_loop().run_in_executor(
+                None, self._record_video, camera, p.stdin)
             _, err = p.communicate()
             if p.returncode == 0:
                 tmpdbx.seek(0)
