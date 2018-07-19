@@ -31,6 +31,8 @@ class ImageManagerBase:
     Offers image capture and upload as services for the derived classes.
     """
 
+    _camera_lock = asyncio.Lock()
+
     def __init__(self, token, camera_config):
         """Initialize image manager base
 
@@ -41,34 +43,45 @@ class ImageManagerBase:
         """
         self._token = token
         self._camera_config = camera_config
-        self._camera_lock = asyncio.Lock()
 
-    async def capture_with_camera(self, coro):
-        """Capture image with camera
+    @classmethod
+    def captures_image(cls, func):
+        """Decorate method that captures image using camera
 
-        Image is only captured during office hours (Mon-Fri 9-17). The actual
-        capturing is delegated to a callback that gets camera resource as its
-        argument.
-
-        Args:
-            coro: Coroutine function for capturing image with camera. The
-               PiCamera object is passed as an argument to the generator. While
-               awaiting for the generator, a lock is held to prevent any other
-               callback accessing the camera hardware.
+        The decorator takes care of observing that images are only captured
+        during office hours, then calls the decorated function with a factory
+        method that can be used as asynchronous context manager to acquire lock
+        for and initialize the camera. Because a lock is acquired, the critical
+        section should be as small as possible.
         """
-        now = localtime()
-        if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
-            logging.debug(
-                "Requested to capture image/video using %r but it's not office hours",
-                coro)
-            return
-
-        try:
-            async with self._camera_lock:
-                with PiCamera(**self._camera_config) as camera:
-                    await coro(camera)
-        except PiCameraError:
-            logging.exception("PiCamera failure")
+        @functools.wraps(func)
+        def capture_with_camera(self, *args, **kwargs):
+            now = localtime()
+            if now.tm_hour < 9 or now.tm_hour >= 17 or now.tm_wday >= 5:
+                logging.debug(
+                    "%r requested to capture image/video %r but it's not office hours",
+                    func.__name__)
+                return
+            camera_config = self._camera_config
+            class Camera:
+                def __init__(self):
+                    self._camera = None
+                async def __aenter__(self):
+                    try:
+                        await cls._camera_lock.acquire()
+                        self._camera = PiCamera(**_camera_config)
+                        return self._camera
+                    except:
+                        cls._camera_lock.release()
+                        raise
+                async def __aexit__(self, exc_type, exc, tb):
+                    self._camera.close()
+                    cls._camera_lock.release()
+            try:
+                return func(self, Camera, *args, **kwargs)
+            except PiCameraError:
+                logging.exception("PiCamera failure")
+        return capture_with_camera
 
     async def upload_image(self, format, img):
         """Upload image to Dropbox
@@ -112,14 +125,16 @@ class StillImageManager(ImageManagerBase):
         """Generate coroutine that takes periodic photos when attached to event loop"""
         with contextlib.suppress(asyncio.CancelledError):
             while not asyncio.Task.current_task().cancelled():
-                await self.capture_with_camera(self._capture_still_image)
+                await self._capture_still_image()
                 await asyncio.sleep(self._interval)
 
-    async def _capture_still_image(self, camera):
+    @ImageManagerBase.captures_image
+    async def _capture_still_image(self, Camera):
         logging.debug("Capturing still image, config: %r", self._camera_config)
         with BytesIO() as img:
-            await asyncio.get_event_loop().run_in_executor(
-                None, functools.partial(camera.capture, img, format="jpeg"))
+            async with Camera() as camera:
+                await asyncio.get_event_loop().run_in_executor(
+                    None, functools.partial(camera.capture, img, format="jpeg"))
             await self.upload_image("jpg", img.getvalue())
 
 
@@ -166,7 +181,7 @@ class VideoManager(ImageManagerBase):
             motion_time, self._last_motion_time)
         if (not self._last_motion_time or
             motion_time - self._last_motion_time > self._motionless_period):
-            await self.capture_with_camera(self._capture_video)
+            await self._capture_video()
         self._last_motion_time = motion_time
 
     def _record_video(self, camera, f):
@@ -174,7 +189,8 @@ class VideoManager(ImageManagerBase):
         camera.wait_recording(self._video_duration)
         camera.stop_recording()
 
-    async def _capture_video(self, camera):
+    @ImageManagerBase.captures_image
+    async def _capture_video(self, Camera):
         logging.debug("Capturing video, config: %r", self._camera_config)
         loop = asyncio.get_event_loop()
         with NamedTemporaryFile() as tmpdbx:
@@ -182,11 +198,12 @@ class VideoManager(ImageManagerBase):
             # asynchronous code. The asyncio subprocess API makes it tedious to
             # write to the pipe feeding avconv its input from the thread running
             # the camera.
-            args = ["avconv", "-y", "-r", str(camera.framerate),
-                    "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
-            logging.debug("Calling avconv with args: %r", args)
-            p = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-            await loop.run_in_executor(None, self._record_video, camera, p.stdin)
+            async with Camera() as camera:
+                args = ["avconv", "-y", "-r", str(camera.framerate),
+                        "-i", "pipe:0", "-f", "mp4", tmpdbx.name]
+                logging.debug("Calling avconv with args: %r", args)
+                p = subprocess.Popen(args, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+                await loop.run_in_executor(None, self._record_video, camera, p.stdin)
             _, err = await loop.run_in_executor(None, p.communicate)
             if p.returncode == 0:
                 tmpdbx.seek(0)
